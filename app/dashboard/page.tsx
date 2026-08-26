@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import studentsData from '@/lib/students.json';
 
 interface Student { studentName: string; parentEmail: string; studentEmail: string; }
@@ -43,6 +43,9 @@ export default function Dashboard() {
     overallProgress: '', gamePlanChanges: '', nextWeekPriorities: '',
   });
   const [sessions, setSessions] = useState<Session[]>([blankSession()]);
+  const [gamePlanPDF, setGamePlanPDF] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -69,18 +72,35 @@ export default function Dashboard() {
     if (sessions.length > 1) setSessions(prev => prev.filter((_, idx) => idx !== i));
   };
 
+  const handlePDFFile = (file: File) => {
+    if (file.type === 'application/pdf') setGamePlanPDF(file);
+  };
+
   const send = async () => {
     setLoading(true); setMsg('');
     try {
-      const res = await fetch('/api/send-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, sessions }),
-      });
+      const fd = new FormData();
+      fd.append('studentName', form.studentName);
+      fd.append('parentEmail', form.parentEmail);
+      fd.append('studentEmail', form.studentEmail);
+      fd.append('weekStart', form.weekStart);
+      fd.append('weekEnd', form.weekEnd);
+      fd.append('currentScore', form.currentScore);
+      fd.append('scoreChange', form.scoreChange);
+      fd.append('targetScore', form.targetScore);
+      fd.append('overallProgress', form.overallProgress);
+      fd.append('gamePlanChanges', form.gamePlanChanges);
+      fd.append('nextWeekPriorities', form.nextWeekPriorities);
+      fd.append('conceptsMastered', JSON.stringify(form.conceptsMastered));
+      fd.append('sessions', JSON.stringify(sessions));
+      if (gamePlanPDF) fd.append('gamePlanPDF', gamePlanPDF);
+
+      const res = await fetch('/api/send-report', { method: 'POST', body: fd });
       if (res.ok) {
         setMsg('✅ Report sent to parent and student!');
         setForm(p => ({ ...p, studentName: '', parentEmail: '', studentEmail: '', currentScore: '', scoreChange: '', targetScore: '', conceptsMastered: [], overallProgress: '', gamePlanChanges: '', nextWeekPriorities: '' }));
         setSessions([blankSession()]);
+        setGamePlanPDF(null);
       } else {
         const e = await res.json();
         setMsg('❌ Error: ' + e.error);
@@ -161,6 +181,30 @@ export default function Dashboard() {
               <label style={lbl}>Gameplan Changes</label>
               <textarea value={form.gamePlanChanges} onChange={e => set('gamePlanChanges', e.target.value)} placeholder="No changes, or describe updates..." style={{ ...inp, minHeight: '60px', resize: 'vertical' as any }} />
             </div>
+
+            {/* PDF Upload */}
+            <div style={{ marginBottom: '10px' }}>
+              <label style={lbl}>Gameplan PDF <span style={{ fontWeight: 400, color: '#6b7280' }}>(optional)</span></label>
+              <input ref={pdfInputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handlePDFFile(f); e.target.value = ''; }} />
+              {gamePlanPDF ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', fontSize: '13px', color: '#1e40af' }}>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as any }}>📄 {gamePlanPDF.name}</span>
+                  <button onClick={() => setGamePlanPDF(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '16px', lineHeight: 1, padding: '0 2px', flexShrink: 0 }} title="Remove">✕</button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => pdfInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handlePDFFile(f); }}
+                  style={{ border: `2px dashed ${dragOver ? '#2563eb' : '#93c5fd'}`, borderRadius: '4px', padding: '14px 10px', textAlign: 'center' as any, cursor: 'pointer', background: dragOver ? '#eff6ff' : '#f8fafc', transition: 'all 0.15s' }}>
+                  <div style={{ fontSize: '20px', marginBottom: '4px' }}>📁</div>
+                  <div style={{ fontSize: '12px', color: '#2563eb', fontWeight: 500 }}>Drop PDF here or click to upload</div>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>PDF files only</div>
+                </div>
+              )}
+            </div>
+
             <div>
               <label style={lbl}>Next Week Priorities</label>
               <textarea value={form.nextWeekPriorities} onChange={e => set('nextWeekPriorities', e.target.value)} placeholder="2-3 key priorities..." style={{ ...inp, minHeight: '60px', resize: 'vertical' as any }} />
