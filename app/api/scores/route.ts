@@ -5,13 +5,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      student_id, test_date, composite, rw_score, math_score,
+      student_id, test_date, target_score, composite, rw_score, math_score,
       craft_structure, expression_ideas, standard_english,
       information_ideas, algebra, advanced_math, geometry_trig, notes,
     } = body;
 
     if (!student_id || !test_date) {
       return NextResponse.json({ error: 'student_id and test_date are required' }, { status: 400 });
+    }
+
+    // Update student's target_score if provided
+    if (target_score) {
+      await supabaseAdmin
+        .from('students')
+        .update({ target_score: Number(target_score) })
+        .eq('id', student_id);
     }
 
     const { error } = await supabaseAdmin.from('practice_scores').insert({
