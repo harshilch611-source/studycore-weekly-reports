@@ -1,0 +1,19 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Environment variables (never commit secrets)
+.env.local
+.env.*.local
+
+# Score import data (contains student PII)
+studycore_scores_import.json
+
+# OS
+.DS_Store
+
+# Debug
+npm-debug.log*
