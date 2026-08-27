@@ -2,10 +2,9 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import NavBar from '@/components/NavBar';
 
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function ReportsLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const auth = cookieStore.get('auth');
-  if (!auth) redirect('/');
+  if (!cookieStore.get('auth')) redirect('/');
   return (
     <>
       <NavBar />

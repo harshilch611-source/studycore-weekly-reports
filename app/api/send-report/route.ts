@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { supabaseAdmin } from '@/lib/supabase';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+const APP_URL = 'https://studycore-weekly-reports1.vercel.app';
 
 interface Session {
   date: string;
@@ -35,6 +37,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Look up student in DB for progress_token
+    const { data: studentRow } = await supabaseAdmin
+      .from('students')
+      .select('id, progress_token')
+      .ilike('name', studentName.trim())
+      .maybeSingle();
+
+    const progressToken: string | null = studentRow?.progress_token ?? null;
+    const studentId: string | null = studentRow?.id ?? null;
+    const progressUrl = progressToken ? `${APP_URL}/progress/${progressToken}` : null;
+
     const scoreChangeColor = scoreChange?.startsWith('-') ? '#dc2626' : '#059669';
 
     const sessionCards = sessions.map((s: Session, i: number) => `
@@ -65,6 +78,15 @@ export async function POST(req: NextRequest) {
                `<span style="background:#dbeafe;color:#1e40af;font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;display:inline-block">${c}</span>`
              ).join('')}
            </div>
+         </div>`
+      : '';
+
+    const progressBlock = progressUrl
+      ? `<div style="margin-top:24px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center">
+           <p style="font-size:13px;color:#6b7280;margin:0 0 12px 0">Track ongoing progress and all past reports:</p>
+           <a href="${progressUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:10px 24px;border-radius:6px;font-weight:600;font-size:13px">
+             View Progress Tracker →
+           </a>
          </div>`
       : '';
 
@@ -143,6 +165,9 @@ export async function POST(req: NextRequest) {
         <p style="font-size:13px;margin:0;color:#374151">${nextWeekPriorities}</p>
       </div>` : ''}
 
+      <!-- Progress Tracker CTA -->
+      ${progressBlock}
+
     </div>
 
     <!-- Footer -->
@@ -175,6 +200,23 @@ export async function POST(req: NextRequest) {
       html,
       ...(attachments ? { attachments } : {}),
     });
+
+    // Log to sent_reports (best-effort — don't fail email send if this errors)
+    try {
+      await supabaseAdmin.from('sent_reports').insert({
+        student_id: studentId,
+        student_name: studentName,
+        week_start: weekStart || null,
+        week_end: weekEnd || null,
+        report_data: {
+          studentName, parentEmail, studentEmail,
+          weekStart, weekEnd, currentScore, scoreChange, targetScore,
+          conceptsMastered, sessions, overallProgress, gamePlanChanges, nextWeekPriorities,
+        },
+      });
+    } catch (dbErr) {
+      console.error('DB log error (non-fatal):', dbErr);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
