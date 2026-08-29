@@ -17,6 +17,17 @@ interface PracticeScore {
   notes: string | null;
 }
 
+interface Assignment {
+  id: string;
+  assignment_name: string;
+  assignment_date: string;
+  correct: number | null;
+  incorrect: number | null;
+  missed: number | null;
+  total_questions: number | null;
+  accuracy_pct: number | null;
+}
+
 interface SentReport {
   id: string;
   week_start: string;
@@ -142,7 +153,7 @@ export default async function ProgressPage({ params }: { params: { token: string
 
   if (!student) notFound();
 
-  const [{ data: scores }, { data: reports }] = await Promise.all([
+  const [{ data: scores }, { data: reports }, { data: assignments }] = await Promise.all([
     supabaseAdmin
       .from('practice_scores')
       .select('*')
@@ -153,10 +164,16 @@ export default async function ProgressPage({ params }: { params: { token: string
       .select('id, week_start, week_end, sent_at, report_data')
       .eq('student_id', student.id)
       .order('sent_at', { ascending: false }),
+    supabaseAdmin
+      .from('assignments')
+      .select('id, assignment_name, assignment_date, correct, incorrect, missed, total_questions, accuracy_pct')
+      .eq('student_id', student.id)
+      .order('assignment_date', { ascending: false }),
   ]);
 
   const practiceScores: PracticeScore[] = scores || [];
   const sentReports: SentReport[] = reports || [];
+  const studentAssignments: Assignment[] = assignments || [];
   const latestScore = practiceScores.length > 0 ? practiceScores[practiceScores.length - 1] : null;
 
   const section = (title: string) => ({
@@ -226,6 +243,46 @@ export default async function ProgressPage({ params }: { params: { token: string
           </div>
         )}
 
+        {/* Assignment History */}
+        {studentAssignments.length > 0 && (
+          <div style={{ background: 'white', borderRadius: '8px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+            <h2 style={section('Assignment History')}>Assignment History</h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  {['Date', 'Assignment', 'Correct', 'Incorrect', 'Missed', 'Accuracy'].map(h => (
+                    <th key={h} style={{ padding: '8px 10px', textAlign: 'left' as any, fontWeight: 600, color: '#374151', borderBottom: '2px solid #e2e8f0', fontSize: '12px', whiteSpace: 'nowrap' as any }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {studentAssignments.map((a, i) => {
+                  const acc = a.accuracy_pct;
+                  const accColor = acc == null ? '#9ca3af' : acc >= 80 ? '#059669' : acc >= 60 ? '#d97706' : '#dc2626';
+                  return (
+                    <tr key={a.id} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' as any, color: '#6b7280' }}>
+                        {new Date(a.assignment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 500, color: '#111827' }}>{a.assignment_name}</td>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#059669', fontWeight: 500 }}>{a.correct ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#dc2626', fontWeight: 500 }}>{a.incorrect ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#9ca3af' }}>{a.missed ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0' }}>
+                        {acc != null ? (
+                          <span style={{ background: acc >= 80 ? '#f0fdf4' : acc >= 60 ? '#fffbeb' : '#fef2f2', color: accColor, fontWeight: 700, fontSize: '12px', padding: '2px 8px', borderRadius: '999px', display: 'inline-block' }}>
+                            {acc}%
+                          </span>
+                        ) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Past Reports */}
         {sentReports.length > 0 && (
           <div style={{ background: 'white', borderRadius: '8px', padding: '20px', border: '1px solid #e2e8f0' }}>
@@ -290,7 +347,7 @@ export default async function ProgressPage({ params }: { params: { token: string
           </div>
         )}
 
-        {practiceScores.length === 0 && sentReports.length === 0 && (
+        {practiceScores.length === 0 && sentReports.length === 0 && studentAssignments.length === 0 && (
           <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center' as any, border: '1px solid #e2e8f0', color: '#9ca3af', fontSize: '14px' }}>
             No data yet. Scores and reports will appear here as they are added.
           </div>
