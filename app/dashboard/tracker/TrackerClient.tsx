@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { TrackerStudent } from '@/lib/tracker';
 
-type SortKey = 'name' | 'status' | 'days_until_test' | 'score_gap' | 'assignments_7d' | 'latest_composite';
+type SortKey = 'name' | 'status' | 'days_until_test' | 'score_gap' | 'assignments_7d' | 'assignments_14d' | 'latest_composite';
 type Dir = 'asc' | 'desc';
 
 const STATUS_ORDER = { on_pace: 0, at_risk: 1, off_track: 2 };
@@ -114,6 +114,7 @@ export default function TrackerClient({ students: initial }: { students: Tracker
         case 'days_until_test': va = a.days_until_test ?? 9999; vb = b.days_until_test ?? 9999; break;
         case 'score_gap': va = a.score_gap ?? -9999; vb = b.score_gap ?? -9999; break;
         case 'assignments_7d': va = a.assignments_7d; vb = b.assignments_7d; break;
+        case 'assignments_14d': va = a.assignments_14d; vb = b.assignments_14d; break;
         case 'latest_composite': va = a.latest_composite ?? 0; vb = b.latest_composite ?? 0; break;
         default: va = a.name.toLowerCase(); vb = b.name.toLowerCase();
       }
@@ -183,6 +184,7 @@ export default function TrackerClient({ students: initial }: { students: Tracker
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Trend</th>
               <SortHeader col="days_until_test" label="Test Date" />
               <SortHeader col="assignments_7d" label="Asgn 7d" />
+              <SortHeader col="assignments_14d" label="Asgn 14d" />
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Asgn 30d</th>
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Acc 7d</th>
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Actions</th>
@@ -227,6 +229,9 @@ export default function TrackerClient({ students: initial }: { students: Tracker
                 </td>
                 <td style={{ padding: '10px 12px', fontWeight: 700, color: s.assignments_7d === 0 ? '#dc2626' : s.assignments_7d < 3 ? '#d97706' : '#16a34a' }}>
                   {s.assignments_7d}
+                </td>
+                <td style={{ padding: '10px 12px', fontWeight: 600, color: s.assignments_14d === 0 ? '#dc2626' : '#374151' }}>
+                  {s.assignments_14d}
                 </td>
                 <td style={{ padding: '10px 12px', color: '#374151' }}>{s.assignments_30d}</td>
                 <td style={{ padding: '10px 12px', color: '#374151' }}>

@@ -13,21 +13,23 @@ export interface TrackerStudent {
   score_gap: number | null;
   trend: 'up' | 'flat' | 'down' | 'insufficient';
   assignments_7d: number;
+  assignments_14d: number;
   assignments_30d: number;
   avg_accuracy_7d: number | null;
   status: 'on_pace' | 'at_risk' | 'off_track';
 }
 
 function computeTrend(scores: number[]): 'up' | 'flat' | 'down' | 'insufficient' {
-  // last 3 scores (most recent last), need at least 2
-  const last3 = scores.slice(-3);
-  if (last3.length < 2) return 'insufficient';
-  const first = last3[0];
-  const last = last3[last3.length - 1];
-  const diff = last - first;
-  if (diff >= 30) return 'up';
-  if (diff <= -30) return 'down';
-  return 'flat';
+  // Need at least 2 full-test scores to determine trend.
+  // Compare first recorded score to latest — this shows overall trajectory,
+  // not just recent wobble.
+  if (scores.length < 2) return 'insufficient';
+  const first = scores[0];
+  const latest = scores[scores.length - 1];
+  const diff = latest - first;
+  if (diff > 0) return 'up';      // any net improvement = up
+  if (diff >= -50) return 'flat'; // within 50 pts down = flat
+  return 'down';                  // dropped >50 pts = down
 }
 
 function daysUntil(dateStr: string | null): number | null {
@@ -41,18 +43,22 @@ function daysUntil(dateStr: string | null): number | null {
 function computeStatus(
   trend: TrackerStudent['trend'],
   assignments_7d: number,
+  assignments_14d: number,
   days_until_test: number | null,
   score_gap: number | null,
 ): TrackerStudent['status'] {
-  // Off track conditions
-  if (trend === 'down') return 'off_track';
-  if (assignments_7d === 0) return 'off_track';
-  if (days_until_test != null && days_until_test < 14 && score_gap != null && score_gap > 100) return 'off_track';
+  // No data: fewer than 2 full tests → can't judge trend → default At Risk
+  if (trend === 'insufficient') return 'at_risk';
 
-  // On pace
+  // Off Track conditions (checked in priority order)
+  if (trend === 'down') return 'off_track';
+  if (assignments_14d === 0) return 'off_track';
+  if (days_until_test != null && days_until_test <= 14 && score_gap != null && score_gap > 150) return 'off_track';
+
+  // On Pace: improving score AND actively doing homework
   if (trend === 'up' && assignments_7d >= 3) return 'on_pace';
 
-  // At risk (everything else)
+  // At Risk: flat trend, or up but low recent homework, or 1–2 assignments in 7d
   return 'at_risk';
 }
 
@@ -60,8 +66,10 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const d7 = new Date(today); d7.setDate(d7.getDate() - 7);
+  const d14 = new Date(today); d14.setDate(d14.getDate() - 14);
   const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
-  const d7str = d7.toISOString().split('T')[0];
+  const d7str  = d7.toISOString().split('T')[0];
+  const d14str = d14.toISOString().split('T')[0];
   const d30str = d30.toISOString().split('T')[0];
 
   // Fetch all students
@@ -72,9 +80,9 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
 
   if (sErr || !students) return [];
 
-  // Fetch all practice scores — full tests only (both sections present)
-  // Section-only imports have math_score or rw_score null and a composite that equals
-  // just one section score (200–800), which corrupts trend calculations.
+  // Full-test scores only: require both rw_score and math_score to be present.
+  // Section-only imports (e.g. RW=720, math=null, composite=720) would corrupt
+  // trend calculations by making a score look like it dropped hundreds of points.
   const { data: allScores } = await supabaseAdmin
     .from('practice_scores')
     .select('student_id, test_date, composite')
@@ -83,7 +91,7 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
     .not('rw_score', 'is', null)
     .order('test_date', { ascending: true });
 
-  // Fetch assignments in last 30 days
+  // Fetch assignments in last 30 days (covers all windows: 7d, 14d, 30d)
   const { data: recentAssignments } = await supabaseAdmin
     .from('assignments')
     .select('student_id, assignment_date, accuracy_pct')
@@ -114,14 +122,16 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
       : null;
 
     const assigns = assignsByStudent.get(student.id) ?? [];
-    const assigns7 = assigns.filter(a => a.assignment_date >= d7str);
-    const assignments_7d = assigns7.length;
+    const assigns7  = assigns.filter(a => a.assignment_date >= d7str);
+    const assigns14 = assigns.filter(a => a.assignment_date >= d14str);
+    const assignments_7d  = assigns7.length;
+    const assignments_14d = assigns14.length;
     const assignments_30d = assigns.length;
 
     const acc7 = assigns7.filter(a => a.accuracy_pct != null).map(a => a.accuracy_pct as number);
     const avg_accuracy_7d = acc7.length > 0 ? Math.round(acc7.reduce((s, v) => s + v, 0) / acc7.length) : null;
 
-    const status = computeStatus(trend, assignments_7d, days_until_test, score_gap);
+    const status = computeStatus(trend, assignments_7d, assignments_14d, days_until_test, score_gap);
 
     return {
       id: student.id,
@@ -135,6 +145,7 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
       score_gap,
       trend,
       assignments_7d,
+      assignments_14d,
       assignments_30d,
       avg_accuracy_7d,
       status,
