@@ -55,8 +55,9 @@ function computeStatus(
   if (assignments_14d === 0) return 'off_track';
   if (days_until_test != null && days_until_test <= 14 && score_gap != null && score_gap > 150) return 'off_track';
 
-  // On Pace: improving score AND actively doing homework
-  if (trend === 'up' && assignments_7d >= 3) return 'on_pace';
+  // On Pace: improving score AND actively doing homework (14d window —
+  // a student tutored 2x/week hits 3 assignments over 2 weeks, not necessarily 7 days)
+  if (trend === 'up' && assignments_14d >= 3) return 'on_pace';
 
   // At Risk: flat trend, or up but low recent homework, or 1–2 assignments in 7d
   return 'at_risk';
