@@ -45,21 +45,15 @@ function computeStatus(
   score_gap: number | null,
 ): TrackerStudent['status'] {
   // ── OFF TRACK: any single condition triggers it ────────────────────────────
-  if (assignments_14d === 0) return 'off_track';
   if (score_diff !== null && score_diff <= -30) return 'off_track';
   if (avg_accuracy_14d !== null && avg_accuracy_14d < 45) return 'off_track';
   if (days_until_test !== null && days_until_test <= 14 && score_gap !== null && score_gap > 150) return 'off_track';
 
-  // ── ON PACE: all three conditions must be met ──────────────────────────────
-  // Score condition: meaningful upward trend OR only 1 test but high accuracy
-  const goodScore = (score_diff !== null && score_diff >= 30) ||
-                    (score_count === 1 && avg_accuracy_14d !== null && avg_accuracy_14d >= 70);
-  const goodHomework = assignments_14d >= 2;
-  const goodAccuracy = avg_accuracy_14d !== null && avg_accuracy_14d >= 60;
-
-  if (goodScore && goodHomework && goodAccuracy) return 'on_pace';
+  // ── ON PACE: score improving AND accuracy solid ────────────────────────────
+  if (score_diff !== null && score_diff >= 30 && avg_accuracy_14d !== null && avg_accuracy_14d >= 60) return 'on_pace';
 
   // ── AT RISK: everything else ───────────────────────────────────────────────
+  // Includes: 0 assignments in 14d, <2 full tests, flat/small score gain, low homework
   return 'at_risk';
 }
 
