@@ -49,8 +49,8 @@ function computeStatus(
   if (avg_accuracy_14d !== null && avg_accuracy_14d < 45) return 'off_track';
   if (days_until_test !== null && days_until_test <= 14 && score_gap !== null && score_gap > 150) return 'off_track';
 
-  // ── ON PACE: score improving AND accuracy solid ────────────────────────────
-  if (score_diff !== null && score_diff >= 30 && avg_accuracy_14d !== null && avg_accuracy_14d >= 60) return 'on_pace';
+  // ── ON PACE: score trending up ≥30pts — accuracy is not a gating requirement ──
+  if (score_diff !== null && score_diff >= 30) return 'on_pace';
 
   // ── AT RISK: everything else ───────────────────────────────────────────────
   // Includes: 0 assignments in 14d, <2 full tests, flat/small score gain, low homework
