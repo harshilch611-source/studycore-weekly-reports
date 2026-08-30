@@ -72,11 +72,15 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
 
   if (sErr || !students) return [];
 
-  // Fetch all practice scores (composite only, ascending by date)
+  // Fetch all practice scores — full tests only (both sections present)
+  // Section-only imports have math_score or rw_score null and a composite that equals
+  // just one section score (200–800), which corrupts trend calculations.
   const { data: allScores } = await supabaseAdmin
     .from('practice_scores')
     .select('student_id, test_date, composite')
     .not('composite', 'is', null)
+    .not('math_score', 'is', null)
+    .not('rw_score', 'is', null)
     .order('test_date', { ascending: true });
 
   // Fetch assignments in last 30 days
