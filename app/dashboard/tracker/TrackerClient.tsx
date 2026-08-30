@@ -3,13 +3,20 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { TrackerStudent } from '@/lib/tracker';
 
-type SortKey = 'name' | 'status' | 'days_until_test' | 'score_gap' | 'assignments_7d' | 'assignments_14d' | 'latest_composite';
+type SortKey = 'name' | 'status' | 'days_until_test' | 'score_gap' | 'score_diff' | 'assignments_7d' | 'assignments_14d' | 'latest_composite';
 type Dir = 'asc' | 'desc';
 
 const STATUS_ORDER = { on_pace: 0, at_risk: 1, off_track: 2 };
 const STATUS_LABEL: Record<string, string> = { on_pace: '🟢 On Pace', at_risk: '🟡 At Risk', off_track: '🔴 Off Track' };
-const TREND_LABEL: Record<string, string> = { up: '↑ Up', flat: '→ Flat', down: '↓ Down', insufficient: '–' };
 const TREND_COLOR: Record<string, string> = { up: '#16a34a', flat: '#6b7280', down: '#dc2626', insufficient: '#9ca3af' };
+
+function trendLabel(trend: string, score_diff: number | null): string {
+  if (trend === 'insufficient') return '— no data';
+  if (score_diff === null) return '→ flat';
+  const sign = score_diff > 0 ? '+' : '';
+  const arrow = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
+  return `${arrow} ${sign}${score_diff} pts`;
+}
 
 const pill: any = (bg: string, color = 'white') => ({
   display: 'inline-block', padding: '2px 8px', borderRadius: '999px',
@@ -113,6 +120,7 @@ export default function TrackerClient({ students: initial }: { students: Tracker
         case 'status': va = STATUS_ORDER[a.status]; vb = STATUS_ORDER[b.status]; break;
         case 'days_until_test': va = a.days_until_test ?? 9999; vb = b.days_until_test ?? 9999; break;
         case 'score_gap': va = a.score_gap ?? -9999; vb = b.score_gap ?? -9999; break;
+        case 'score_diff': va = a.score_diff ?? -9999; vb = b.score_diff ?? -9999; break;
         case 'assignments_7d': va = a.assignments_7d; vb = b.assignments_7d; break;
         case 'assignments_14d': va = a.assignments_14d; vb = b.assignments_14d; break;
         case 'latest_composite': va = a.latest_composite ?? 0; vb = b.latest_composite ?? 0; break;
@@ -181,12 +189,12 @@ export default function TrackerClient({ students: initial }: { students: Tracker
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Best</th>
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Target</th>
               <SortHeader col="score_gap" label="Gap" />
-              <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Trend</th>
+              <SortHeader col="score_diff" label="Trend" />
               <SortHeader col="days_until_test" label="Test Date" />
               <SortHeader col="assignments_7d" label="Asgn 7d" />
               <SortHeader col="assignments_14d" label="Asgn 14d" />
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Asgn 30d</th>
-              <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Acc 7d</th>
+              <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Acc 14d</th>
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: 600, color: '#6b7280', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>Actions</th>
             </tr>
           </thead>
@@ -213,7 +221,7 @@ export default function TrackerClient({ students: initial }: { students: Tracker
                   {s.score_gap == null ? '–' : s.score_gap > 0 ? `+${s.score_gap}` : s.score_gap}
                 </td>
                 <td style={{ padding: '10px 12px', fontWeight: 600, color: TREND_COLOR[s.trend] }}>
-                  {TREND_LABEL[s.trend]}
+                  {trendLabel(s.trend, s.score_diff)}
                 </td>
                 <td style={{ padding: '10px 12px', color: '#374151' }}>
                   {s.next_test_date ? (
@@ -234,8 +242,8 @@ export default function TrackerClient({ students: initial }: { students: Tracker
                   {s.assignments_14d}
                 </td>
                 <td style={{ padding: '10px 12px', color: '#374151' }}>{s.assignments_30d}</td>
-                <td style={{ padding: '10px 12px', color: '#374151' }}>
-                  {s.avg_accuracy_7d != null ? `${s.avg_accuracy_7d}%` : '–'}
+                <td style={{ padding: '10px 12px', fontWeight: s.avg_accuracy_14d != null && s.avg_accuracy_14d < 45 ? 700 : 400, color: s.avg_accuracy_14d == null ? '#9ca3af' : s.avg_accuracy_14d < 45 ? '#dc2626' : s.avg_accuracy_14d < 60 ? '#d97706' : '#16a34a' }}>
+                  {s.avg_accuracy_14d != null ? `${s.avg_accuracy_14d}%` : '–'}
                 </td>
                 <td style={{ padding: '10px 12px' }}>
                   <button onClick={() => setEditStudent(s)}

@@ -9,27 +9,23 @@ export interface TrackerStudent {
   // computed
   latest_composite: number | null;
   best_composite: number | null;
+  score_diff: number | null;        // latest full test − first full test (null if <1 test)
+  score_count: number;              // number of full tests on record
   days_until_test: number | null;
   score_gap: number | null;
   trend: 'up' | 'flat' | 'down' | 'insufficient';
   assignments_7d: number;
   assignments_14d: number;
   assignments_30d: number;
-  avg_accuracy_7d: number | null;
+  avg_accuracy_14d: number | null;
   status: 'on_pace' | 'at_risk' | 'off_track';
 }
 
-function computeTrend(scores: number[]): 'up' | 'flat' | 'down' | 'insufficient' {
-  // Need at least 2 full-test scores to determine trend.
-  // Compare first recorded score to latest — this shows overall trajectory,
-  // not just recent wobble.
-  if (scores.length < 2) return 'insufficient';
-  const first = scores[0];
-  const latest = scores[scores.length - 1];
-  const diff = latest - first;
-  if (diff > 0) return 'up';      // any net improvement = up
-  if (diff >= -50) return 'flat'; // within 50 pts down = flat
-  return 'down';                  // dropped >50 pts = down
+function deriveTrend(score_diff: number | null, score_count: number): TrackerStudent['trend'] {
+  if (score_count < 2 || score_diff === null) return 'insufficient';
+  if (score_diff >= 30) return 'up';
+  if (score_diff <= -30) return 'down';
+  return 'flat';
 }
 
 function daysUntil(dateStr: string | null): number | null {
@@ -41,39 +37,42 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 function computeStatus(
-  trend: TrackerStudent['trend'],
-  assignments_7d: number,
+  score_diff: number | null,
+  score_count: number,
   assignments_14d: number,
+  avg_accuracy_14d: number | null,
   days_until_test: number | null,
   score_gap: number | null,
 ): TrackerStudent['status'] {
-  // No data: fewer than 2 full tests → can't judge trend → default At Risk
-  if (trend === 'insufficient') return 'at_risk';
-
-  // Off Track conditions (checked in priority order)
-  if (trend === 'down') return 'off_track';
+  // ── OFF TRACK: any single condition triggers it ────────────────────────────
   if (assignments_14d === 0) return 'off_track';
-  if (days_until_test != null && days_until_test <= 14 && score_gap != null && score_gap > 150) return 'off_track';
+  if (score_diff !== null && score_diff <= -30) return 'off_track';
+  if (avg_accuracy_14d !== null && avg_accuracy_14d < 45) return 'off_track';
+  if (days_until_test !== null && days_until_test <= 14 && score_gap !== null && score_gap > 150) return 'off_track';
 
-  // On Pace: improving score AND actively doing homework (14d window —
-  // a student tutored 2x/week hits 3 assignments over 2 weeks, not necessarily 7 days)
-  if (trend === 'up' && assignments_14d >= 3) return 'on_pace';
+  // ── ON PACE: all three conditions must be met ──────────────────────────────
+  // Score condition: meaningful upward trend OR only 1 test but high accuracy
+  const goodScore = (score_diff !== null && score_diff >= 30) ||
+                    (score_count === 1 && avg_accuracy_14d !== null && avg_accuracy_14d >= 70);
+  const goodHomework = assignments_14d >= 2;
+  const goodAccuracy = avg_accuracy_14d !== null && avg_accuracy_14d >= 60;
 
-  // At Risk: flat trend, or up but low recent homework, or 1–2 assignments in 7d
+  if (goodScore && goodHomework && goodAccuracy) return 'on_pace';
+
+  // ── AT RISK: everything else ───────────────────────────────────────────────
   return 'at_risk';
 }
 
 export async function fetchTrackerData(): Promise<TrackerStudent[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const d7 = new Date(today); d7.setDate(d7.getDate() - 7);
+  const d7  = new Date(today); d7.setDate(d7.getDate() - 7);
   const d14 = new Date(today); d14.setDate(d14.getDate() - 14);
   const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
   const d7str  = d7.toISOString().split('T')[0];
   const d14str = d14.toISOString().split('T')[0];
   const d30str = d30.toISOString().split('T')[0];
 
-  // Fetch all students
   const { data: students, error: sErr } = await supabaseAdmin
     .from('students')
     .select('id, name, progress_token, target_score, next_test_date')
@@ -81,9 +80,9 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
 
   if (sErr || !students) return [];
 
-  // Full-test scores only: require both rw_score and math_score to be present.
-  // Section-only imports (e.g. RW=720, math=null, composite=720) would corrupt
-  // trend calculations by making a score look like it dropped hundreds of points.
+  // Full-test scores only: both rw_score and math_score must be present.
+  // Section-only imports (e.g. RW=720, math=null, composite=720) corrupt
+  // trend calculations by making scores look like they dropped massively.
   const { data: allScores } = await supabaseAdmin
     .from('practice_scores')
     .select('student_id, test_date, composite')
@@ -92,17 +91,16 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
     .not('rw_score', 'is', null)
     .order('test_date', { ascending: true });
 
-  // Fetch assignments in last 30 days (covers all windows: 7d, 14d, 30d)
+  // Fetch assignments covering the widest window (30d) — filter client-side
   const { data: recentAssignments } = await supabaseAdmin
     .from('assignments')
     .select('student_id, assignment_date, accuracy_pct')
     .gte('assignment_date', d30str);
 
-  // Group by student
-  const scoresByStudent = new Map<string, { test_date: string; composite: number }[]>();
+  const scoresByStudent = new Map<string, number[]>();
   for (const s of allScores ?? []) {
     if (!scoresByStudent.has(s.student_id)) scoresByStudent.set(s.student_id, []);
-    scoresByStudent.get(s.student_id)!.push({ test_date: s.test_date, composite: s.composite });
+    scoresByStudent.get(s.student_id)!.push(s.composite);
   }
 
   const assignsByStudent = new Map<string, { assignment_date: string; accuracy_pct: number | null }[]>();
@@ -112,27 +110,31 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
   }
 
   return students.map(student => {
-    const scores = scoresByStudent.get(student.id) ?? [];
-    const composites = scores.map(s => s.composite);
-    const latest_composite = composites.length > 0 ? composites[composites.length - 1] : null;
-    const best_composite = composites.length > 0 ? Math.max(...composites) : null;
-    const trend = computeTrend(composites);
+    const composites = scoresByStudent.get(student.id) ?? [];
+    const score_count = composites.length;
+    const latest_composite = score_count > 0 ? composites[score_count - 1] : null;
+    const best_composite = score_count > 0 ? Math.max(...composites) : null;
+    const score_diff = score_count >= 2 ? composites[score_count - 1] - composites[0] : null;
+    const trend = deriveTrend(score_diff, score_count);
+
     const days_until_test = daysUntil(student.next_test_date);
     const score_gap = (student.target_score != null && latest_composite != null)
       ? student.target_score - latest_composite
       : null;
 
-    const assigns = assignsByStudent.get(student.id) ?? [];
-    const assigns7  = assigns.filter(a => a.assignment_date >= d7str);
-    const assigns14 = assigns.filter(a => a.assignment_date >= d14str);
+    const assigns    = assignsByStudent.get(student.id) ?? [];
+    const assigns7   = assigns.filter(a => a.assignment_date >= d7str);
+    const assigns14  = assigns.filter(a => a.assignment_date >= d14str);
     const assignments_7d  = assigns7.length;
     const assignments_14d = assigns14.length;
     const assignments_30d = assigns.length;
 
-    const acc7 = assigns7.filter(a => a.accuracy_pct != null).map(a => a.accuracy_pct as number);
-    const avg_accuracy_7d = acc7.length > 0 ? Math.round(acc7.reduce((s, v) => s + v, 0) / acc7.length) : null;
+    const acc14 = assigns14.map(a => a.accuracy_pct).filter((v): v is number => v != null);
+    const avg_accuracy_14d = acc14.length > 0
+      ? Math.round(acc14.reduce((s, v) => s + v, 0) / acc14.length)
+      : null;
 
-    const status = computeStatus(trend, assignments_7d, assignments_14d, days_until_test, score_gap);
+    const status = computeStatus(score_diff, score_count, assignments_14d, avg_accuracy_14d, days_until_test, score_gap);
 
     return {
       id: student.id,
@@ -142,13 +144,15 @@ export async function fetchTrackerData(): Promise<TrackerStudent[]> {
       next_test_date: student.next_test_date,
       latest_composite,
       best_composite,
+      score_diff,
+      score_count,
       days_until_test,
       score_gap,
       trend,
       assignments_7d,
       assignments_14d,
       assignments_30d,
-      avg_accuracy_7d,
+      avg_accuracy_14d,
       status,
     };
   });
